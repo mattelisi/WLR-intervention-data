@@ -1,0 +1,9 @@
+./stan_results/bGLMM_bias_WLR_results_full.RDS
+./stan_results/bGLMM_bias_WLR_results_full_corrected.RDS
+./stan_results/bGLMM_bias_WLR_results_full_corrected_FA.RDS
+
+./data_bias/additional_data/bGLMM_bias_check_rfgOnly.rds
+./data_bias/additional_data/bGLMM_bias_check_results_rfgOnly.RDS
+./data_bias/additional_data/bGLMM_bias_check_results_FA.RDS
+
+.Rhistory

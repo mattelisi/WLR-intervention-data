@@ -1,0 +1,1655 @@
+---
+title: "WLR intervention analyses"
+author: "Matteo Lisi"
+output: 
+   pdf_document:
+     fig_caption: yes
+     fig_crop: no
+     highlight: pygments
+     keep_tex: yes
+     number_sections: yes
+     toc: yes
+     toc_depth: 4
+bibliography: /home/matteo/Documents/library.bib
+header-includes:
+ \usepackage{float}
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(collapse = TRUE, comment=NA, tidy.opts=list(width.cutoff=55),tidy=TRUE)
+opts_chunk$set(fig.pos = 'H')
+opts_knit$set(eval.after = "fig.cap")
+setwd('~/git_local/WLR-intervention-data/')
+library(ggplot2)
+source("/home/matteo/sync/miscR/miscFunctions.R") # local file with some ggplot settings
+library(rstan)
+require(rethinking) # for HPDI intervals
+library(nparLD)     # for non-parametric tests
+```
+
+\newpage
+
+# Participants
+
+Participants were tested at three time points: T1 (in February before the WLR reading program), T2 (in April, after the program), and T3 (later follow up in June).
+
+```{r ,echo=FALSE}
+dMerged <- read.table("./data_bias/bias_T123_merged.txt",sep=";",header=T)
+dMerged <- dMerged[dMerged$id!="JM9",]
+d <- dMerged[dMerged$task=="HS",]
+
+# subject sample table
+dag <- aggregate(refugee~id+group+ethni+time, dMerged,mean)
+tab1 <- aggregate(id~group+ethni+refugee, dag[dag$time=="T1",], length)
+colnames(tab1)[4] <- "T1"
+tab1$T2 <- aggregate(id~group+ethni+refugee, dag[dag$time=="T2",], length)$id
+tab1$T3 <- aggregate(id~group+ethni+refugee, dag[dag$time=="T3",], length)$id
+tab1$group <- ifelse(tab1$group=="C","control","WLR")
+tab1$ethni<- ifelse(tab1$ethni=="J","Jordanian","Syrian")
+colnames(tab1)[1] <- "Group"
+colnames(tab1)[2] <- "Nationality"
+colnames(tab1)[3] <- "refugee status"
+
+kable(tab1, caption = "Composition of the dataset (number of subjects per timepoint)")
+```
+
+```{r ,echo=FALSE}
+d_age <- aggregate(age~id+group+ethni+time, d, mean)
+d_age$plot_group <- with(d_age, paste(group, ethni, time, sep="_"))
+d_age$ethni<- ifelse(d_age$ethni=="J","Jordanian","Syrian")
+d_age$group <- ifelse(d_age$group=="C","control","WLR")
+
+d_age_ag <- aggregate(age~group+ethni+time, d_age, mean)
+d_age_ag$Std. <- aggregate(age~group+ethni+time, d_age, sd)$age
+colnames(d_age_ag) <- c("Group","Nationality","Timepoint","Mean age", "Std.")
+kable(d_age_ag, caption = "Mean age per group and timepoint", digits=1)
+```
+
+\newpage
+
+# Modelling
+
+To analyse the data, we used a multilevel Bayesian generalized-linear model (GLM). The model is fully specified by the following expressions (the first 2 define the likelihood, the rest are the priors and hyperpriors). Note that differnetly from a classical GLM it accounts for the possibility of lapses, or random responses (parameter $\lambda$).
+
+
+\begin{align*}
+ p(\text{responding 'sad'}) = & \frac{\lambda}{2} + (1 - \lambda) \, \Phi \left(\varphi \right)  \\
+ \, \\
+\varphi =  & \,  \beta_0  + u_0 + \alpha_0 \, \text{gender} + \left(\beta_1 +  u_1 + \alpha_1 \, \text{gender}\right)\, \text{img} +\beta_2\, \text{rfg} + \beta_3 \, \text{group} \\
+& + \text{T2} \, \left(\beta_4 +\beta_5 \, \text{rfg} + \beta_6 \, \text{group} + \beta_7 \, \text{group} \times \text{rfg} \right) \\
+& + \text{T3} \, \left(\beta_8 +\beta_9 \, \text{rfg} + \beta_{10} \, \text{group} + \beta_{11} \, \text{group} \times \text{rfg} \right)\\
+& + \text{img} \, \text{T2} \, \left(\beta_{12} +\beta_{13} \, \text{rfg} + \beta_{14} \, \text{group} + \beta_{15} \, \text{group} \times \text{rfg} \right) \\
+& + \text{img} \, \text{T3} \, \left(\beta_{16} +\beta_{17} \, \text{rfg} + \beta_{18} \, \text{group} + \beta_{19} \, \text{group} \times \text{rfg} \right)\\
+\, \\
+\beta_{0, 2, \dots, 19} \sim & \mathcal{N}\left(0, 1 \right) \\
+\beta_1 \sim & \mathcal{N}\left(2, 5 \right) \\
+\lambda \sim & \text{Beta} \left(0.5, 15 \right)\\
+\mathbf{u} \sim & \mathcal{N}\left(0, \Sigma \right) \\
+\Sigma  = & \left(\sigma_u^2 \textit{I} \right) \, \textbf{R} \, \left( \sigma_u^2 \textit{I} \right) \\
+\sigma_u  \sim & \text{HalfCauchy} \left(0, 1\right)\\
+\textbf{R} \sim & \text{LKJcorr} \left( 2 \right)
+\end{align*}
+
+where 'img' indicate the level of morphing (centered and rescaled to have standard deviation of 1); 'rfg', 'group' are dummy variables that indicate whether the subject was a refugee (Syrian or Jordanian) or a member of the experimental group (WLR), respectively; and 'T1' and 'T2' are also dummy variables that indicate whether the measurements was taken at T2 or T3 (the first timepoint, T1, is the baseline). 'gender' is the gender of the actor whose face was morphed to generate the stimuli, coded using deviation (or sum) contrasts ($\text{gender}=1$ for female faces, and $\text{gender}=-1$ for male faces). $\lambda$ is a lapse rate parameter, which is assumed to be constant for all subjects (since it was the experimenters, not the children, who pushed buttons for all group and at all time points). Note that the model allow for possible differences between groups and nationality (or refugee status), and also for differences in changes across timepoints.
+
+Finally, note also that although the model is formulated as generalized linear multilevel model (GLMM), the coefficients can be directly mapped to those of the psychometric function. To see this, consider the following simplified example:
+
+\begin{align*}
+p \left(y_i\right) & = \Phi\left(\frac{x_i -\mu}{\sigma} \right) \\
+& = \Phi ( -\frac{\mu}{\sigma} + \frac{1}{\sigma}x_i )\\
+& = \Phi\left(\beta_0 + \beta_1x_i \right) \\ \\& \mu=-\frac{\beta_0}{\beta_1}, \,\,\, \sigma=\frac{1}{\beta_1}
+\end{align*}
+
+
+```{r ,echo=FALSE}
+# load data
+d_stan <- readRDS("./data_stan/biasHS_full.RDS")
+
+# load fitted model
+m0 <- readRDS("./stan_results/bGLMM_bias_WLR_results_full.RDS")
+
+# compute group-level parameters
+beta1 <- extract(m0, pars=c("beta[1]"))$"beta[1]"
+beta2 <- extract(m0, pars=c("beta[2]"))$"beta[2]"
+beta_group <- extract(m0, pars=c("beta_group"))$"beta_group"
+beta_time <- extract(m0, pars=c("beta_time"))$"beta_time"
+beta_time_groupE <- extract(m0, pars=c("beta_time_groupE"))$"beta_time_groupE"
+beta2_time <- extract(m0, pars=c("beta2_time"))$"beta2_time"
+beta2_time_groupE <- extract(m0, pars=c("beta2_time_groupE"))$"beta2_time_groupE"
+beta_rfg <- extract(m0, pars="beta_rfg")$"beta_rfg"
+lambda <- extract(m0, pars="lambda")$"lambda"
+
+# location
+B0_J_C_T1 <- beta1
+B0_J_C_T2 <- beta1 + beta_time[,1,1]
+B0_J_C_T3 <- beta1 + beta_time[,1,2]
+B0_J_E_T1 <- beta1 + beta_group[,1]
+B0_J_E_T2 <- beta1 + beta_group[,1] + beta_time[,1,1] + beta_time_groupE[,1,1]
+B0_J_E_T3 <- beta1 + beta_group[,1] + beta_time[,1,2] + beta_time_groupE[,1,2]
+B0_S_C_T1 <- beta1 + beta_rfg[,1]
+B0_S_C_T2 <- beta1 + beta_rfg[,1] + beta_time[,2,1]
+B0_S_C_T3 <- beta1 + beta_rfg[,1] + beta_time[,2,2]
+B0_S_E_T1 <- beta1 + beta_rfg[,1] + beta_group[,1]
+B0_S_E_T2 <- beta1 + beta_rfg[,1] + beta_group[,1] + beta_time[,2,1] + beta_time_groupE[,2,1]
+B0_S_E_T3 <- beta1 + beta_rfg[,1] + beta_group[,1] + beta_time[,2,2] + beta_time_groupE[,2,2]
+
+# scale
+B1_J_C_T1 <- beta2
+B1_J_C_T2 <- beta2 + beta2_time[,1,1]
+B1_J_C_T3 <- beta2 + beta2_time[,1,2]
+B1_J_E_T1 <- beta2 + beta_group[,2]
+B1_J_E_T2 <- beta2 + beta_group[,2] + beta2_time[,1,1] + beta2_time_groupE[,1,1]
+B1_J_E_T3 <- beta2 + beta_group[,2] + beta2_time[,1,2] + beta2_time_groupE[,1,2]
+B1_S_C_T1 <- beta2 + beta_rfg[,2]
+B1_S_C_T2 <- beta2 + beta_rfg[,2] + beta2_time[,2,1]
+B1_S_C_T3 <- beta2 + beta_rfg[,2] + beta2_time[,2,2]
+B1_S_E_T1 <- beta2 + beta_rfg[,2] + beta_group[,2]
+B1_S_E_T2 <- beta2 + beta_rfg[,2] + beta_group[,2]  + beta2_time[,2,1] + beta2_time_groupE[,2,1]
+B1_S_E_T3 <- beta2 + beta_rfg[,2] + beta_group[,2]  + beta2_time[,2,2] + beta2_time_groupE[,2,2]
+
+# transform in prop. of morphing from neutral
+scl_val <- unique(abs(range((d_stan$img_number- 11) / 6.2)))
+
+# mu
+mu_J_C_T1 <- (-B0_J_C_T1 / B1_J_C_T1 )/scl_val 
+mu_J_C_T2 <- (-B0_J_C_T2 / B1_J_C_T2 )/scl_val 
+mu_J_C_T3 <- (-B0_J_C_T3 / B1_J_C_T3 )/scl_val 
+
+mu_J_E_T1 <- (-B0_J_E_T1 / B1_J_E_T1 )/scl_val 
+mu_J_E_T2 <- (-B0_J_E_T2 / B1_J_E_T2 )/scl_val 
+mu_J_E_T3 <- (-B0_J_E_T3 / B1_J_E_T3 )/scl_val 
+
+mu_S_C_T1 <- (-B0_S_C_T1 / B1_S_C_T1 )/scl_val 
+mu_S_C_T2 <- (-B0_S_C_T2 / B1_S_C_T2 )/scl_val 
+mu_S_C_T3 <- (-B0_S_C_T3 / B1_S_C_T3 )/scl_val 
+
+mu_S_E_T1 <- (-B0_S_E_T1 / B1_S_E_T1 )/scl_val 
+mu_S_E_T2 <- (-B0_S_E_T2 / B1_S_E_T2 )/scl_val 
+mu_S_E_T3 <- (-B0_S_E_T3 / B1_S_E_T3 )/scl_val 
+
+# sigma
+sigma_J_C_T1 <- (1 / B1_J_C_T1 )/scl_val  
+sigma_J_C_T2 <- (1 / B1_J_C_T2 )/scl_val 
+sigma_J_C_T3 <- (1 / B1_J_C_T3 )/scl_val 
+
+sigma_J_E_T1 <- (1 / B1_J_E_T1 )/scl_val 
+sigma_J_E_T2 <- (1 / B1_J_E_T2 )/scl_val 
+sigma_J_E_T3 <- (1 / B1_J_E_T3 )/scl_val 
+
+sigma_S_C_T1 <- (1 / B1_S_C_T1 )/scl_val 
+sigma_S_C_T2 <- (1 / B1_S_C_T2 )/scl_val 
+sigma_S_C_T3 <- (1 / B1_S_C_T3 )/scl_val 
+
+sigma_S_E_T1 <- (1 / B1_S_E_T1 )/scl_val 
+sigma_S_E_T2 <- (1 / B1_S_E_T2 )/scl_val 
+sigma_S_E_T3 <- (1 / B1_S_E_T3 )/scl_val 
+
+# make dataframe for plotting
+dag <- expand.grid(time=c("T1","T2","T3"),ethni=c("S","J" ),group=c("C","E"))
+dag$mu <- NA
+dag$mu_se <- NA
+dag$mu_lb <- NA
+dag$mu_ub <- NA
+dag$sigma <- NA
+dag$sigma_se <- NA
+dag$sigma_lb <- NA
+dag$sigma_ub <- NA
+for(i in 1:nrow(dag)){
+  i_mu_name <- paste("mu",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  i_sigma_name <- paste("sigma",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  eval(parse(text=paste("i_mu <- ",i_mu_name)))
+  eval(parse(text=paste("i_sigma <- ",i_sigma_name)))
+  attributes(i_mu) <- NULL
+  attributes(i_sigma) <- NULL
+  dag$mu[i] <- mean(i_mu)
+  dag$mu_se[i] <- sd(i_mu)
+  dag$mu_lb[i] <- HPDI(i_mu, prob=0.95)[1]
+  dag$mu_ub[i] <- HPDI(i_mu, prob=0.95)[2]
+  dag$sigma[i] <- mean(i_sigma)
+  dag$sigma_se[i] <- sd(i_sigma)
+  dag$sigma_lb[i] <- HPDI(i_sigma, prob=0.95)[1]
+  dag$sigma_ub[i] <- HPDI(i_sigma, prob=0.95)[2]
+}
+
+# do plot
+dag$plot_group <- paste(dag$ethni, dag$group)
+dag$time_n <- rep(1:3,4)
+dag$time_n <- ifelse(dag$group=="C",dag$time_n-0.05,dag$time_n+0.05)
+dag$group <- ifelse(dag$group=="C","control","WLR")
+dag$ethni<- ifelse(dag$ethni=="J","Jordanian","Syrian")
+```
+
+
+# Happy-sad psychophysical task
+
+The following results concern the happy-sad bias task.
+
+The PSE, estimates via the model, are plotted in Figure 3 as a function of the time point and group. Error bands are 95% Bayesian credible intervals (specifically HPDI, highest posterior density intervals).
+
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Group level estimate of PSE, plot by group and timepoint."}
+ggplot(dag, aes(x=time_n, y=mu, ymin=mu_lb, ymax=mu_ub, color=group,group=plot_group))+geom_hline(yintercept=0,lty=2,col="black",size=0.2)+geom_line()+geom_point(size=2,pch=21)+geom_errorbar(width=0.1)+facet_grid(.~ethni)+nice_theme+coord_cartesian(ylim=c(-1,1))+scale_color_manual(values=c("dark grey","black"),name="")+labs(y="PSE [prop. morphing]",x="")+scale_x_continuous(breaks=1:3, labels=c("T1","T2","T3"))+scale_y_continuous(breaks=c(-1,-0.5,0,0.5,1),labels=c("happy","-0.5", "neutral","+0.5", "sad"))+ annotate(geom="text", x=1.5, y=-0.8, label="bias toward sad",size=1.8,color="grey")+ annotate(geom="text", x=1.6, y=+0.8, label="bias toward happy",size=1.8,color="grey")
+```
+
+
+## Adjusting for differences in actor identity (Syrian control, T3)
+
+Due to a mix-up occurred while collecting data on the field, Syrian control group at T3 was not presented with the same actors as the others. This create a possible confound for assessing the effect of the intervention at T3 in the Syrian group. 
+
+However, it is possible to adjust for this confound, by including in the analysees some additiona data that we collected. Specifically, we have a fairly large sample of Syrian children that have been tested with both set of faces. The approach I have adopted to adjust the analysis is the following:
+
+1. Estimate the difference in the parameters of the psychometric function using these additional dataset, which consist of the children tested at T1, and the new children tested at T3 (see Table 4). 
+
+2. Such analysis allow estimating a posterior distribution that gives the probability of over possible changes in the parameters due to the change in the identity of the stimulus.
+
+3. Next, the posterior distribution is used as a prior in the full model (using a Gaussian approximation, see below) to constrain additional parameters, added to account for the effect of actor identity. 
+
+Overall, the outcome will be identical to the previous model, except for the estimated parameters of the Syrian control at T3, which will be adjusted to account for the effect of actor. Importantly, using this approach uncertainty is propagated exactly, such that the confidence interval around the estimated parameters for the Syrian T3 group will be larger (reflecing the added uncertainty about the true effect of actor identity).
+
+```{r, echo=FALSE}
+d_check <- read.table("./data_bias/additional_data/bias_all.txt",sep=";",header=T)
+group_index <- d_check$time!= "T2" & (d_check$time!= "T3" | d_check$group== "N_T3")
+d_check <- d_check[which(group_index),]
+d_check <- d_check[which(d_check$task== "HS"),]
+d_check <- d_check[which(d_check$ethni!= "B"),]
+d_check <- d_check[which(d_check$ethni== "S"),] # keep only Syrian
+d_check <- d_check[which(d_check$time!= "SSC"),]
+d_check$refugee <- ifelse(d_check$ethni=="S",1,0)
+dag_check <- aggregate(refugee~id+group+ethni+face_gender+actor+time+group, d_check, mean)
+tab4 <- aggregate(id~actor+face_gender+ethni, dag_check, length)
+tab4$ethni<- ifelse(tab4$ethni=="J","Jordanian","Syrian")
+colnames(tab4)[1] <- "Actor identity"
+colnames(tab4)[2] <- "Actor gender"
+colnames(tab4)[3] <- "Nationality"
+colnames(tab4)[4] <- "n. subjects"
+kable(tab4, caption = "Composition of the supplementary dataset used to estimate the effect of actor identity.")
+```
+
+The model is a simplified version of the full model described above, with the difference that in this case there are no parameter to code for group effects, but only for the effect of actor gender and identity. The simplified model is fully specified by the following expressions:
+
+\begin{align*}
+ p(\text{responding 'sad'}) = & \frac{\lambda}{2} + (1 - \lambda) \, \Phi \left(\varphi \right)  \\
+ \, \\
+\varphi =  & \,  \beta_0  + u_0 + \beta_2 \, \text{gender} +\beta_3\, \text{actor} + \beta_4 \, \text{gender} \times \text{actor} \\
+ & +  \text{img} \, \left(\beta_1 +  u_1 + \beta_5 \, \text{gender} +\beta_6\, \text{actor} + \beta_7 \, \text{gender} \times \text{actor} \right) \\
+\, \\
+\beta_{0, 2, \dots, 7} \sim & \mathcal{N}\left(0, 1 \right) \\
+\beta_1 \sim & \mathcal{N}\left(2, 5 \right) \\
+\lambda \sim & \text{Beta} \left(0.5, 15 \right)\\
+\mathbf{u} \sim & \mathcal{N}\left(0, \Sigma \right) \\
+\Sigma  = & \left(\sigma_u^2 \textit{I} \right) \, \textbf{R} \, \left( \sigma_u^2 \textit{I} \right) \\
+\sigma_u  \sim & \text{HalfCauchy} \left(0, 1\right)\\
+\textbf{R} \sim & \text{LKJcorr} \left( 2 \right)
+\end{align*}
+
+
+The posterior distribution obtained for the parameters of interest (i.e., $\beta_3, \beta_4, \beta_6, \beta_7$) are shown in the next figure. The histogram represents the samples of the posterior distribution obtained via Markov-Chain Montecarlo (MCMC) sampling. The red curves are Gaussian functions, fit on the posterior samples, which will be used to 
+
+```{r, echo=FALSE, warning=FALSE, fig.height=5,fig.width=5, fig.align='center', fig.cap = "The grey histogram shows the posterior distributions over the effect of actor identity on bias and psychometric slopes. Red lines are the Gaussian approximation that was used the as informative prior in the main analysis."}
+
+m0 <- readRDS("./data_bias/additional_data/bGLMM_bias_check_results_rfgOnly.RDS")
+
+beta1 <- extract(m0, pars=c("beta[1]"))$"beta[1]"
+beta2 <- extract(m0, pars=c("beta[2]"))$"beta[2]"
+beta_gender <- extract(m0, pars=c("beta_face_gender"))$"beta_face_gender"
+beta_actor <- extract(m0, pars=c("beta_actor"))$"beta_actor"
+beta_actorXgender <- extract(m0, pars=c("beta_actorXgender"))$"beta_actorXgender"
+
+B0_F1 <- beta1 + beta_gender[,1] #+ beta_rfg[,1]
+B0_F2 <- beta1 + beta_gender[,1] + beta_actor[,1] + beta_actorXgender[,1] #+ beta_rfg[,1]
+B0_M1 <- beta1 #+ beta_rfg[,1]
+B0_M2 <- beta1 + beta_actor[,1] #+ beta_rfg[,1]
+
+B1_F1 <- beta2 + beta_gender[,2] #+ beta_rfg[,2]
+B1_F2 <- beta2 + beta_gender[,2] + beta_actor[,2] + beta_actorXgender[,2] #+ beta_rfg[,2]
+B1_M1 <- beta2 #+ beta_rfg[,2]
+B1_M2 <- beta2 + beta_actor[,2] #+ beta_rfg[,2]
+
+
+par(mfrow=c(2,2))
+hist(beta_actor[,1], breaks=40, freq=F, col="grey",border="white",main="",xlab=expression(beta[3]))
+curve(dnorm(x, mean = mean(beta_actor[,1]),sd=sd(beta_actor[,1])), col = 2,  lwd = 2, add = TRUE)
+
+hist(beta_actor[,2], breaks=40, freq=F, col="grey",border="white", main="",xlab=expression(beta[6]))
+curve(dnorm(x, mean = mean(beta_actor[,2]),sd=sd(beta_actor[,2])), col = 2,  lwd = 2, add = TRUE)
+
+hist(beta_actorXgender[,1], breaks=40, freq=F, col="grey",border="white", main="",xlab=expression(beta[4]))
+curve(dnorm(x, mean = mean(beta_actorXgender[,1]),sd=sd(beta_actorXgender[,1])), col = 2,  lwd = 2, add = TRUE)
+
+hist(beta_actorXgender[,2], breaks=40, freq=F, col="grey",border="white", main="",xlab=expression(beta[7]))
+curve(dnorm(x, mean = mean(beta_actorXgender[,2]),sd=sd(beta_actorXgender[,2])), col = 2,  lwd = 2, add = TRUE)
+
+```
+
+
+```{r, echo=FALSE}
+# create dataframe with parameters for prior
+prior_actor <- data.frame(Parameter=c("beta_3","beta_4","beta_6","beta_7"), 
+                          "name in updated model"=c("beta_20","beta_21","beta_22","beta_23"), 
+                          Mean = c(mean(beta_actor[,1]), mean(beta_actorXgender[,1]), mean(beta_actor[,2]), mean(beta_actorXgender[,2])),
+                          Std = c(sd(beta_actor[,1]), sd(beta_actorXgender[,1]), sd(beta_actor[,2]), sd(beta_actorXgender[,2])))
+kable(prior_actor, caption = "Summary statistics for posterior distributions of the effect of actor identity.",digits=3)
+```
+
+The posterior distribution, summarized in the table, are then used as prior in the updated model used to analyze the effect of the intervention, which becomes
+
+\begin{align*}
+ p(\text{responding 'sad'}) = & \frac{\lambda}{2} + (1 - \lambda) \, \Phi \left(\varphi \right)  \\
+ \, \\
+\varphi =  & \,  \beta_0  + u_0 + \alpha_0 \, \text{gender} + \left(\beta_1 +  u_1 + \alpha_1 \, \text{gender}\right)\, \text{img} +\beta_2\, \text{rfg} + \beta_3 \, \text{group} \\
+& + \text{T2} \, \left(\beta_4 +\beta_5 \, \text{rfg} + \beta_6 \, \text{group} + \beta_7 \, \text{group} \times \text{rfg} \right) \\
+& + \text{T3} \, \left(\beta_8 +\beta_9 \, \text{rfg} + \beta_{10} \, \text{group} + \beta_{11} \, \text{group} \times \text{rfg} \right)\\
+& + \text{img} \, \text{T2} \, \left(\beta_{12} +\beta_{13} \, \text{rfg} + \beta_{14} \, \text{group} + \beta_{15} \, \text{group} \times \text{rfg} \right) \\
+& + \text{img} \, \text{T3} \, \left(\beta_{16} +\beta_{17} \, \text{rfg} + \beta_{18} \, \text{group} + \beta_{19} \, \text{group} \times \text{rfg} \right)\\
+& + \beta_{20} \, \text{actor} + \beta_{21} \, \text{gender} \times \text{actor}\\
+& + \text{img} \left( \beta_{22} \, \text{actor} + \beta_{23} \, \text{gender} \times \text{actor} \right)
+\end{align*}
+
+where I have added to the bottom the new part (last two lines), and omitted the prior description for brevity. The prior description is the same as before, with the exception that the new parameters $\beta_{20}, \dots, \beta_{23}$ have priors that are normal distribution with mean and standard deviation as indicated in the table (i.e. they correspond to the red curves). The results of this new analysis are represented in Figure 6. Notice that the main differences are that while previously the Syrian control seemed to exhibit an decrease in bias at T3, this effect can be entirely explained by the change in stimulus. The confidence bands is increased to reflect the increased uncertainty, however it seems safe to conclude that these results indicate that the none of the control groups, Syrian or Jordanian, exhibited significant changes in bias across timepoints.
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Group level estimate of PSE, plot by group and timepoint. Estimated using all data, and with adjustment for the bias of Syrian control at T3, due to the different stimulus (see text)."}
+# load data
+d_stan <- readRDS("./data_stan/biasHS_full.RDS")
+
+# load fitted model
+m0 <- readRDS("./stan_results/bGLMM_bias_WLR_results_full_corrected.RDS")
+
+# compute group-level parameters
+beta1 <- extract(m0, pars=c("beta[1]"))$"beta[1]"
+beta2 <- extract(m0, pars=c("beta[2]"))$"beta[2]"
+beta_group <- extract(m0, pars=c("beta_group"))$"beta_group"
+beta_time <- extract(m0, pars=c("beta_time"))$"beta_time"
+beta_time_groupE <- extract(m0, pars=c("beta_time_groupE"))$"beta_time_groupE"
+beta2_time <- extract(m0, pars=c("beta2_time"))$"beta2_time"
+beta2_time_groupE <- extract(m0, pars=c("beta2_time_groupE"))$"beta2_time_groupE"
+beta_rfg <- extract(m0, pars="beta_rfg")$"beta_rfg"
+lambda <- extract(m0, pars="lambda")$"lambda"
+
+# location
+B0_J_C_T1 <- beta1
+B0_J_C_T2 <- beta1 + beta_time[,1,1]
+B0_J_C_T3 <- beta1 + beta_time[,1,2]
+B0_J_E_T1 <- beta1 + beta_group[,1]
+B0_J_E_T2 <- beta1 + beta_group[,1] + beta_time[,1,1] + beta_time_groupE[,1,1]
+B0_J_E_T3 <- beta1 + beta_group[,1] + beta_time[,1,2] + beta_time_groupE[,1,2]
+B0_S_C_T1 <- beta1 + beta_rfg[,1]
+B0_S_C_T2 <- beta1 + beta_rfg[,1] + beta_time[,2,1]
+B0_S_C_T3 <- beta1 + beta_rfg[,1] + beta_time[,2,2]
+B0_S_E_T1 <- beta1 + beta_rfg[,1] + beta_group[,1]
+B0_S_E_T2 <- beta1 + beta_rfg[,1] + beta_group[,1] + beta_time[,2,1] + beta_time_groupE[,2,1]
+B0_S_E_T3 <- beta1 + beta_rfg[,1] + beta_group[,1] + beta_time[,2,2] + beta_time_groupE[,2,2]
+
+# scale
+B1_J_C_T1 <- beta2
+B1_J_C_T2 <- beta2 + beta2_time[,1,1]
+B1_J_C_T3 <- beta2 + beta2_time[,1,2]
+B1_J_E_T1 <- beta2 + beta_group[,2]
+B1_J_E_T2 <- beta2 + beta_group[,2] + beta2_time[,1,1] + beta2_time_groupE[,1,1]
+B1_J_E_T3 <- beta2 + beta_group[,2] + beta2_time[,1,2] + beta2_time_groupE[,1,2]
+B1_S_C_T1 <- beta2 + beta_rfg[,2]
+B1_S_C_T2 <- beta2 + beta_rfg[,2] + beta2_time[,2,1]
+B1_S_C_T3 <- beta2 + beta_rfg[,2] + beta2_time[,2,2]
+B1_S_E_T1 <- beta2 + beta_rfg[,2] + beta_group[,2]
+B1_S_E_T2 <- beta2 + beta_rfg[,2] + beta_group[,2]  + beta2_time[,2,1] + beta2_time_groupE[,2,1]
+B1_S_E_T3 <- beta2 + beta_rfg[,2] + beta_group[,2]  + beta2_time[,2,2] + beta2_time_groupE[,2,2]
+
+# transform in prop. of morphing from neutral
+scl_val <- unique(abs(range((d_stan$img_number- 11) / 6.2)))
+
+# mu
+mu_J_C_T1 <- (-B0_J_C_T1 / B1_J_C_T1 )/scl_val 
+mu_J_C_T2 <- (-B0_J_C_T2 / B1_J_C_T2 )/scl_val 
+mu_J_C_T3 <- (-B0_J_C_T3 / B1_J_C_T3 )/scl_val 
+
+mu_J_E_T1 <- (-B0_J_E_T1 / B1_J_E_T1 )/scl_val 
+mu_J_E_T2 <- (-B0_J_E_T2 / B1_J_E_T2 )/scl_val 
+mu_J_E_T3 <- (-B0_J_E_T3 / B1_J_E_T3 )/scl_val 
+
+mu_S_C_T1 <- (-B0_S_C_T1 / B1_S_C_T1 )/scl_val 
+mu_S_C_T2 <- (-B0_S_C_T2 / B1_S_C_T2 )/scl_val 
+mu_S_C_T3 <- (-B0_S_C_T3 / B1_S_C_T3 )/scl_val 
+
+mu_S_E_T1 <- (-B0_S_E_T1 / B1_S_E_T1 )/scl_val 
+mu_S_E_T2 <- (-B0_S_E_T2 / B1_S_E_T2 )/scl_val 
+mu_S_E_T3 <- (-B0_S_E_T3 / B1_S_E_T3 )/scl_val 
+
+
+# sigma
+sigma_J_C_T1 <- (1 / B1_J_C_T1 )/scl_val  
+sigma_J_C_T2 <- (1 / B1_J_C_T2 )/scl_val 
+sigma_J_C_T3 <- (1 / B1_J_C_T3 )/scl_val 
+
+sigma_J_E_T1 <- (1 / B1_J_E_T1 )/scl_val 
+sigma_J_E_T2 <- (1 / B1_J_E_T2 )/scl_val 
+sigma_J_E_T3 <- (1 / B1_J_E_T3 )/scl_val 
+
+sigma_S_C_T1 <- (1 / B1_S_C_T1 )/scl_val 
+sigma_S_C_T2 <- (1 / B1_S_C_T2 )/scl_val 
+sigma_S_C_T3 <- (1 / B1_S_C_T3 )/scl_val 
+
+sigma_S_E_T1 <- (1 / B1_S_E_T1 )/scl_val 
+sigma_S_E_T2 <- (1 / B1_S_E_T2 )/scl_val 
+sigma_S_E_T3 <- (1 / B1_S_E_T3 )/scl_val 
+
+# make dataframe for plotting
+dag <- expand.grid(time=c("T1","T2","T3"),ethni=c("S","J" ),group=c("C","E"))
+dag$mu <- NA
+dag$mu_se <- NA
+dag$mu_lb <- NA
+dag$mu_ub <- NA
+dag$sigma <- NA
+dag$sigma_se <- NA
+dag$sigma_lb <- NA
+dag$sigma_ub <- NA
+for(i in 1:nrow(dag)){
+  i_mu_name <- paste("mu",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  i_sigma_name <- paste("sigma",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  eval(parse(text=paste("i_mu <- ",i_mu_name)))
+  eval(parse(text=paste("i_sigma <- ",i_sigma_name)))
+  attributes(i_mu) <- NULL
+  attributes(i_sigma) <- NULL
+  dag$mu[i] <- mean(i_mu)
+  dag$mu_se[i] <- sd(i_mu)
+  dag$mu_lb[i] <- HPDI(i_mu, prob=0.95)[1]
+  dag$mu_ub[i] <- HPDI(i_mu, prob=0.95)[2]
+  dag$sigma[i] <- mean(i_sigma)
+  dag$sigma_se[i] <- sd(i_sigma)
+  dag$sigma_lb[i] <- HPDI(i_sigma, prob=0.95)[1]
+  dag$sigma_ub[i] <- HPDI(i_sigma, prob=0.95)[2]
+}
+
+# do plot
+dag$plot_group <- paste(dag$ethni, dag$group)
+dag$time_n <- rep(1:3,4)
+dag$time_n <- ifelse(dag$group=="C",dag$time_n-0.05,dag$time_n+0.05)
+dag$group <- ifelse(dag$group=="C","control","WLR")
+dag$ethni<- ifelse(dag$ethni=="J","Jordanian","Syrian")
+
+ggplot(dag, aes(x=time_n, y=mu, ymin=mu_lb, ymax=mu_ub, color=group,group=plot_group))+geom_hline(yintercept=0,lty=2,col="black",size=0.2)+geom_line()+geom_point(size=2,pch=21)+geom_errorbar(width=0.1)+facet_grid(.~ethni)+nice_theme+coord_cartesian(ylim=c(-1,1))+scale_color_manual(values=c("dark grey","black"),name="")+labs(y="PSE [prop. morphing]",x="")+scale_x_continuous(breaks=1:3, labels=c("T1","T2","T3"))+scale_y_continuous(breaks=c(-1,-0.5,0,0.5,1),labels=c("happy","-0.5", "neutral","+0.5", "sad"))+ annotate(geom="text", x=1.5, y=-0.8, label="bias toward sad",size=1.8,color="grey")+ annotate(geom="text", x=1.6, y=+0.8, label="bias toward happy",size=1.8,color="grey")
+
+```
+
+This can be seen even more clearly in Figure 7, where the same data is plotted as differences from T1
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Group level estimate of PSE, plotted as a difference from T1."}
+# make difference plot
+dag <- expand.grid(time=c("T2","T3"),ethni=c("S","J" ),group=c("C","E"))
+dag$mu <- NA
+dag$mu_se <- NA
+dag$mu_lb <- NA
+dag$mu_ub <- NA
+dag$sigma <- NA
+dag$sigma_se <- NA
+dag$sigma_lb <- NA
+dag$sigma_ub <- NA
+for(i in 1:nrow(dag)){
+  i_mu_name <- paste("mu",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  i_sigma_name <- paste("sigma",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  
+  i_mu_name_T1 <- paste("mu",dag$ethni[i],dag$group[i],"T1",sep="_")
+  i_sigma_name_T1 <- paste("sigma",dag$ethni[i],dag$group[i],"T1",sep="_")
+  
+  eval(parse(text=paste("i_mu <- ",i_mu_name)))
+  eval(parse(text=paste("i_sigma <- ",i_sigma_name)))
+  eval(parse(text=paste("i_mu_T1 <- ",i_mu_name_T1)))
+  eval(parse(text=paste("i_sigma_T1 <- ",i_sigma_name_T1)))
+  attributes(i_mu) <- NULL
+  attributes(i_sigma) <- NULL
+  attributes(i_mu_T1) <- NULL
+  attributes(i_sigma_T1) <- NULL
+  
+  dag$mu[i] <- mean(i_mu - i_mu_T1)
+  dag$mu_se[i] <- sd(i_mu - i_mu_T1)
+  dag$mu_lb[i] <- HPDI(i_mu - i_mu_T1, prob=0.95)[1]
+  dag$mu_ub[i] <- HPDI(i_mu - i_mu_T1, prob=0.95)[2]
+  dag$sigma[i] <- mean(i_sigma- i_sigma_T1)
+  dag$sigma_se[i] <- sd(i_sigma - i_sigma_T1)
+  dag$sigma_lb[i] <- HPDI(i_sigma - i_sigma_T1, prob=0.95)[1]
+  dag$sigma_ub[i] <- HPDI(i_sigma - i_sigma_T1, prob=0.95)[2]
+}
+dag$time_n <- rep(2:3,4)
+
+dag_add <- expand.grid(time=c("T1"),ethni=c("S","J" ),group=c("C","E"), mu=0, time_n=1)
+dag <- merge(dag, dag_add, all=T)
+
+dag$plot_group <- paste(dag$ethni, dag$group)
+dag$time_n <- ifelse(dag$group=="C",dag$time_n-0.05,dag$time_n+0.05)
+
+dag$group <- ifelse(dag$group=="C","control","WLR")
+dag$ethni<- ifelse(dag$ethni=="J","Jordanian","Syrian")
+
+#pdf("bias123_diff.pdf",width=4,height=2.5)
+ggplot(dag, aes(x=time_n, y=mu, ymin=mu_lb, ymax=mu_ub, color=group,group=plot_group))+geom_hline(yintercept=0,lty=2,col="black",size=0.2)+geom_line()+geom_point(size=2,pch=21)+geom_errorbar(width=0.1)+facet_grid(.~ethni)+nice_theme+coord_cartesian(ylim=c(-0.35,0.35))+scale_color_manual(values=c("dark grey","black"),name="")+labs(y="PSE difference from T1 [prop. morph.]",x="")+scale_x_continuous(breaks=1:3, labels=c("T1","T2","T3"))
+#dev.off()
+
+```
+
+
+```{r, echo=FALSE}
+dag_save <- dag
+dag_save <- dag_save[dag_save$time!="T1",]
+dag_save <- dag_save[,c(1,2,3,4,6,7,8)]
+kable(dag_save, caption = "Mean and 95% credible intervals of differences from T1 (happy-sad task).",digits=3)
+```
+
+
+\newpage
+
+# Fear-anger psychophysical task
+
+Analyses of the fear-anger task. The analysis procedure is exactly the same. 
+
+The only difference is that in this case I have two Jordanian control that were tested using actor 2 at T3, therefore in the additional model used to estimate the effect of the actor identity I have included both Syrian and Jordanian (see table). The results indicates no effect of the treatment, since the confidence intervals are always largely overlapping. There is a significant change in bias at T2 but only for the Jordanians, and for both the control and experimental group.
+
+```{r, echo=FALSE}
+d_check <- read.table("./data_bias/additional_data/bias_all.txt",sep=";",header=T)
+group_index <- d_check$time!= "T2" & (d_check$time!= "T3" | d_check$group== "N_T3")
+d_check <- d_check[which(group_index),]
+d_check <- d_check[which(d_check$task== "FA"),]
+d_check <- d_check[which(d_check$ethni!= "B"),]
+d_check <- d_check[which(d_check$time!= "SSC"),]
+d_check$refugee <- ifelse(d_check$ethni=="S",1,0)
+dag_check <- aggregate(refugee~id+group+ethni+face_gender+actor+time+group, d_check, mean)
+tab4 <- aggregate(id~actor+face_gender+ethni, dag_check, length)
+tab4$ethni<- ifelse(tab4$ethni=="J","Jordanian","Syrian")
+colnames(tab4)[1] <- "Actor identity"
+colnames(tab4)[2] <- "Actor gender"
+colnames(tab4)[3] <- "Nationality"
+colnames(tab4)[4] <- "n. subjects"
+kable(tab4, caption = "Composition of the supplementary dataset used to estimate the effect of actor identity.")
+```
+
+Figure 10 and 11 represent the PSE in the FA task, using the same coventions adopted in the previous figures.
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Group level estimate of PSE in the FA task, plot by group and timepoint. Estimated using all data, and with adjustment for the bias of Syrian control at T3, due to the different stimulus (see text)."}
+# load data
+d_stan <- readRDS("./data_stan/biasHS_full.RDS")
+
+# load fitted model
+m0 <- readRDS("./stan_results/bGLMM_bias_WLR_results_full_corrected_FA.RDS")
+
+# compute group-level parameters
+beta1 <- extract(m0, pars=c("beta[1]"))$"beta[1]"
+beta2 <- extract(m0, pars=c("beta[2]"))$"beta[2]"
+beta_group <- extract(m0, pars=c("beta_group"))$"beta_group"
+beta_time <- extract(m0, pars=c("beta_time"))$"beta_time"
+beta_time_groupE <- extract(m0, pars=c("beta_time_groupE"))$"beta_time_groupE"
+beta2_time <- extract(m0, pars=c("beta2_time"))$"beta2_time"
+beta2_time_groupE <- extract(m0, pars=c("beta2_time_groupE"))$"beta2_time_groupE"
+beta_rfg <- extract(m0, pars="beta_rfg")$"beta_rfg"
+lambda <- extract(m0, pars="lambda")$"lambda"
+
+# location
+B0_J_C_T1 <- beta1
+B0_J_C_T2 <- beta1 + beta_time[,1,1]
+B0_J_C_T3 <- beta1 + beta_time[,1,2]
+B0_J_E_T1 <- beta1 + beta_group[,1]
+B0_J_E_T2 <- beta1 + beta_group[,1] + beta_time[,1,1] + beta_time_groupE[,1,1]
+B0_J_E_T3 <- beta1 + beta_group[,1] + beta_time[,1,2] + beta_time_groupE[,1,2]
+B0_S_C_T1 <- beta1 + beta_rfg[,1]
+B0_S_C_T2 <- beta1 + beta_rfg[,1] + beta_time[,2,1]
+B0_S_C_T3 <- beta1 + beta_rfg[,1] + beta_time[,2,2]
+B0_S_E_T1 <- beta1 + beta_rfg[,1] + beta_group[,1]
+B0_S_E_T2 <- beta1 + beta_rfg[,1] + beta_group[,1] + beta_time[,2,1] + beta_time_groupE[,2,1]
+B0_S_E_T3 <- beta1 + beta_rfg[,1] + beta_group[,1] + beta_time[,2,2] + beta_time_groupE[,2,2]
+
+# scale
+B1_J_C_T1 <- beta2
+B1_J_C_T2 <- beta2 + beta2_time[,1,1]
+B1_J_C_T3 <- beta2 + beta2_time[,1,2]
+B1_J_E_T1 <- beta2 + beta_group[,2]
+B1_J_E_T2 <- beta2 + beta_group[,2] + beta2_time[,1,1] + beta2_time_groupE[,1,1]
+B1_J_E_T3 <- beta2 + beta_group[,2] + beta2_time[,1,2] + beta2_time_groupE[,1,2]
+B1_S_C_T1 <- beta2 + beta_rfg[,2]
+B1_S_C_T2 <- beta2 + beta_rfg[,2] + beta2_time[,2,1]
+B1_S_C_T3 <- beta2 + beta_rfg[,2] + beta2_time[,2,2]
+B1_S_E_T1 <- beta2 + beta_rfg[,2] + beta_group[,2]
+B1_S_E_T2 <- beta2 + beta_rfg[,2] + beta_group[,2]  + beta2_time[,2,1] + beta2_time_groupE[,2,1]
+B1_S_E_T3 <- beta2 + beta_rfg[,2] + beta_group[,2]  + beta2_time[,2,2] + beta2_time_groupE[,2,2]
+
+# transform in prop. of morphing from neutral
+scl_val <- unique(abs(range((d_stan$img_number- 11) / 6.2)))
+
+# mu
+mu_J_C_T1 <- (-B0_J_C_T1 / B1_J_C_T1 )/scl_val 
+mu_J_C_T2 <- (-B0_J_C_T2 / B1_J_C_T2 )/scl_val 
+mu_J_C_T3 <- (-B0_J_C_T3 / B1_J_C_T3 )/scl_val 
+
+mu_J_E_T1 <- (-B0_J_E_T1 / B1_J_E_T1 )/scl_val 
+mu_J_E_T2 <- (-B0_J_E_T2 / B1_J_E_T2 )/scl_val 
+mu_J_E_T3 <- (-B0_J_E_T3 / B1_J_E_T3 )/scl_val 
+
+mu_S_C_T1 <- (-B0_S_C_T1 / B1_S_C_T1 )/scl_val 
+mu_S_C_T2 <- (-B0_S_C_T2 / B1_S_C_T2 )/scl_val 
+mu_S_C_T3 <- (-B0_S_C_T3 / B1_S_C_T3 )/scl_val 
+
+mu_S_E_T1 <- (-B0_S_E_T1 / B1_S_E_T1 )/scl_val 
+mu_S_E_T2 <- (-B0_S_E_T2 / B1_S_E_T2 )/scl_val 
+mu_S_E_T3 <- (-B0_S_E_T3 / B1_S_E_T3 )/scl_val 
+
+# sigma
+sigma_J_C_T1 <- (1 / B1_J_C_T1 )/scl_val  
+sigma_J_C_T2 <- (1 / B1_J_C_T2 )/scl_val 
+sigma_J_C_T3 <- (1 / B1_J_C_T3 )/scl_val 
+
+sigma_J_E_T1 <- (1 / B1_J_E_T1 )/scl_val 
+sigma_J_E_T2 <- (1 / B1_J_E_T2 )/scl_val 
+sigma_J_E_T3 <- (1 / B1_J_E_T3 )/scl_val 
+
+sigma_S_C_T1 <- (1 / B1_S_C_T1 )/scl_val 
+sigma_S_C_T2 <- (1 / B1_S_C_T2 )/scl_val 
+sigma_S_C_T3 <- (1 / B1_S_C_T3 )/scl_val 
+
+sigma_S_E_T1 <- (1 / B1_S_E_T1 )/scl_val 
+sigma_S_E_T2 <- (1 / B1_S_E_T2 )/scl_val 
+sigma_S_E_T3 <- (1 / B1_S_E_T3 )/scl_val 
+
+# make dataframe for plotting
+dag <- expand.grid(time=c("T1","T2","T3"),ethni=c("S","J" ),group=c("C","E"))
+dag$mu <- NA
+dag$mu_se <- NA
+dag$mu_lb <- NA
+dag$mu_ub <- NA
+dag$sigma <- NA
+dag$sigma_se <- NA
+dag$sigma_lb <- NA
+dag$sigma_ub <- NA
+for(i in 1:nrow(dag)){
+  i_mu_name <- paste("mu",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  i_sigma_name <- paste("sigma",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  eval(parse(text=paste("i_mu <- ",i_mu_name)))
+  eval(parse(text=paste("i_sigma <- ",i_sigma_name)))
+  attributes(i_mu) <- NULL
+  attributes(i_sigma) <- NULL
+  dag$mu[i] <- mean(i_mu)
+  dag$mu_se[i] <- sd(i_mu)
+  dag$mu_lb[i] <- HPDI(i_mu, prob=0.95)[1]
+  dag$mu_ub[i] <- HPDI(i_mu, prob=0.95)[2]
+  dag$sigma[i] <- mean(i_sigma)
+  dag$sigma_se[i] <- sd(i_sigma)
+  dag$sigma_lb[i] <- HPDI(i_sigma, prob=0.95)[1]
+  dag$sigma_ub[i] <- HPDI(i_sigma, prob=0.95)[2]
+}
+
+# do plot
+dag$plot_group <- paste(dag$ethni, dag$group)
+dag$time_n <- rep(1:3,4)
+dag$time_n <- ifelse(dag$group=="C",dag$time_n-0.05,dag$time_n+0.05)
+dag$group <- ifelse(dag$group=="C","control","WLR")
+dag$ethni<- ifelse(dag$ethni=="J","Jordanian","Syrian")
+
+ggplot(dag, aes(x=time_n, y=mu, ymin=mu_lb, ymax=mu_ub, color=group,group=plot_group))+geom_hline(yintercept=0,lty=2,col="black",size=0.2)+geom_line()+geom_point(size=2,pch=21)+geom_errorbar(width=0.1)+facet_grid(.~ethni)+nice_theme+coord_cartesian(ylim=c(-1,1))+scale_color_manual(values=c("dark grey","black"),name="")+labs(y="PSE [prop. morphing]",x="")+scale_x_continuous(breaks=1:3, labels=c("T1","T2","T3"))+scale_y_continuous(breaks=c(-1,-0.5,0,0.5,1),labels=c("anger","-0.5", "neutral","+0.5", "fear"))+ annotate(geom="text", x=1.5, y=-0.8, label="bias toward sad",size=1.8,color="grey")+ annotate(geom="text", x=1.6, y=+0.8, label="bias toward happy",size=1.8,color="grey")
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Group level estimate of PSE, plotted as a difference from T1."}
+# make difference plot
+dag <- expand.grid(time=c("T2","T3"),ethni=c("S","J" ),group=c("C","E"))
+dag$mu <- NA
+dag$mu_se <- NA
+dag$mu_lb <- NA
+dag$mu_ub <- NA
+dag$sigma <- NA
+dag$sigma_se <- NA
+dag$sigma_lb <- NA
+dag$sigma_ub <- NA
+for(i in 1:nrow(dag)){
+  i_mu_name <- paste("mu",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  i_sigma_name <- paste("sigma",dag$ethni[i],dag$group[i],dag$time[i],sep="_")
+  
+  i_mu_name_T1 <- paste("mu",dag$ethni[i],dag$group[i],"T1",sep="_")
+  i_sigma_name_T1 <- paste("sigma",dag$ethni[i],dag$group[i],"T1",sep="_")
+  
+  eval(parse(text=paste("i_mu <- ",i_mu_name)))
+  eval(parse(text=paste("i_sigma <- ",i_sigma_name)))
+  eval(parse(text=paste("i_mu_T1 <- ",i_mu_name_T1)))
+  eval(parse(text=paste("i_sigma_T1 <- ",i_sigma_name_T1)))
+  attributes(i_mu) <- NULL
+  attributes(i_sigma) <- NULL
+  attributes(i_mu_T1) <- NULL
+  attributes(i_sigma_T1) <- NULL
+  
+  dag$mu[i] <- mean(i_mu - i_mu_T1)
+  dag$mu_se[i] <- sd(i_mu - i_mu_T1)
+  dag$mu_lb[i] <- HPDI(i_mu - i_mu_T1, prob=0.95)[1]
+  dag$mu_ub[i] <- HPDI(i_mu - i_mu_T1, prob=0.95)[2]
+  dag$sigma[i] <- mean(i_sigma- i_sigma_T1)
+  dag$sigma_se[i] <- sd(i_sigma - i_sigma_T1)
+  dag$sigma_lb[i] <- HPDI(i_sigma - i_sigma_T1, prob=0.95)[1]
+  dag$sigma_ub[i] <- HPDI(i_sigma - i_sigma_T1, prob=0.95)[2]
+}
+dag$time_n <- rep(2:3,4)
+
+dag_add <- expand.grid(time=c("T1"),ethni=c("S","J" ),group=c("C","E"), mu=0, time_n=1)
+dag <- merge(dag, dag_add, all=T)
+
+dag$plot_group <- paste(dag$ethni, dag$group)
+dag$time_n <- ifelse(dag$group=="C",dag$time_n-0.05,dag$time_n+0.05)
+
+dag$group <- ifelse(dag$group=="C","control","WLR")
+dag$ethni<- ifelse(dag$ethni=="J","Jordanian","Syrian")
+
+ggplot(dag, aes(x=time_n, y=mu, ymin=mu_lb, ymax=mu_ub, color=group,group=plot_group))+geom_hline(yintercept=0,lty=2,col="black",size=0.2)+geom_line()+geom_point(size=2,pch=21)+geom_errorbar(width=0.1)+facet_grid(.~ethni)+nice_theme+coord_cartesian(ylim=c(-0.35,0.35))+scale_color_manual(values=c("dark grey","black"),name="")+labs(y="PSE difference from T1 [prop. morph.]",x="")+scale_x_continuous(breaks=1:3, labels=c("T1","T2","T3"))
+
+
+```
+
+
+
+```{r, echo=FALSE}
+dag_save <- dag
+dag_save <- dag_save[dag_save$time!="T1",]
+dag_save <- dag_save[,c(1,2,3,4,6,7,8)]
+kable(dag_save, caption = "Mean and 95% credible intervals of differences from T1 (fear-anger task).",digits=3)
+```
+
+
+\newpage
+
+
+
+# Questionnaires analysis
+
+## Whole-sample comparison at T1
+
+The different questionnaire measures obtained at T1 where compared across groups (Syrian vs. Jordanian) using the  Mann–Whitney _U_ test, with a normal approximation to compute the p-values. See table for the results
+
+```{r, echo=FALSE}
+# load data
+d <- read.table("./data_questionnaire/questionnaire_WLR_T123.txt",header=T,sep=";")
+
+# whole-sample comparisons at T1
+d$CRIES_ADJUSTED <- ifelse(d$CRIES_ADJUSTED==99,NA,d$CRIES_ADJUSTED)
+d$CRIES_SCORE <- ifelse(d$CRIES_SCORE==99,NA,d$CRIES_SCORE)
+d$CRIES_8 <- ifelse(d$CRIES_8==99,NA,d$CRIES_8)
+d$CRIES_INTRUSION <- ifelse(d$CRIES_INTRUSION==99,NA,d$CRIES_INTRUSION)
+d$CRIES_AVOIDANCE <- ifelse(d$CRIES_AVOIDANCE==99,NA,d$CRIES_AVOIDANCE)
+d$AYMHS_1 <- ifelse(d$AYMHS_1==99,NA,d$AYMHS_1)
+d$HIDS_INSECURITY_1 <- ifelse(d$HIDS_INSECURITY_1==99,NA,d$HIDS_INSECURITY_1)
+d$HIDS_DISTRESS_1 <- ifelse(d$HIDS_DISTRESS_1==99,NA,d$HIDS_DISTRESS_1)
+d$OPTIMISM_1 <- ifelse(d$OPTIMISM_1==99,NA,d$OPTIMISM_1)
+d$AYMHS_1 <- ifelse(d$AYMHS_1==99,NA,d$AYMHS_1)
+
+T1test <- {}
+T1test[[1]] <- wilcox.test(OPTIMISM_1~nationality, data=d,exact=F) 
+T1test[[2]] <- wilcox.test(PPL_IN_HOUSEHOLD ~nationality, data=d,exact=F) 
+T1test[[3]] <- wilcox.test(CRIES_8 ~nationality, data=d,exact=F) 
+T1test[[4]] <- wilcox.test(CRIES_INTRUSION ~nationality, data=d,exact=F) 
+T1test[[5]] <- wilcox.test(CRIES_AVOIDANCE ~nationality, data=d,exact=F) 
+T1test[[6]] <- wilcox.test(AYMHS_1 ~nationality, data=d,exact=F) 
+T1test[[7]] <- wilcox.test(HIDS_INSECURITY_1 ~nationality, data=d,exact=F) 
+T1test[[8]] <- wilcox.test(HIDS_DISTRESS_1 ~nationality, data=d,exact=F) 
+T1test[[9]] <- wilcox.test(TEC ~nationality, data=d,exact=F) #
+T1test[[10]] <- wilcox.test(CRIES_ADJUSTED ~nationality, data=d,exact=F)# 
+T1test[[11]] <- wilcox.test(CRIES_SCORE ~nationality, data=d,exact=F) # 
+
+T1_dat <- {}
+for(i in 1:length(T1test)){
+  t_i <- T1test[[i]]
+  t_name <- strsplit(t_i$data.name," ")[[1]][1]
+  d_line <- data.frame(questionnaire = strsplit(t_i$data.name," ")[[1]][1], W=t_i$statistic, p=t_i$p.value)
+  T1_dat <- rbind(T1_dat, d_line)
+}
+rownames(T1_dat) <- NULL
+
+kable(T1_dat, caption = "Comparison of questionnaire responses at T1 (Syrian vs Jordanian). TEC = Traumatic Events")
+```
+
+Longitudinal tests for changes in the questionnaire scores at the different time points were done using the non-parametric marginal model [@Brunner2001,@Brunner1999], a generalization of classical non-parametric tests to repeated-measures, factorial designs. For each test the statistical significance is assessed using the ANOVA-type statistic (ATS). The ATS is typically preferred to more classical $\chi^2$ commonly used by rank-score tests as it requires less assumptions on the covariance matrix and it has superior small sample performances [@Brunner2001]. Moreover, for the main effects and interactions involving only the between subjects effects, I report the modified ANOVA-type statistic with Box approximation, which is preferred to ATS [@Brunner2001].
+
+Notice that the longitudinal tests are restricted to the subset of participants for which a measure is available at all timepoints.
+
+\newpage
+
+## Longitudinal analysis (3 time points)
+
+The following plots contain data from all participants (regardless of whether they showed up at T2 or T3).
+
+### Optimism
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=5, fig.align='center', fig.cap = "Optimism scores across timepoints"}
+nd <- data.frame(opti=c(d$OPTIMISM_1,d$OPTIMISM_2,d$YLOT_3), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d)),rep("T3",nrow(d))),
+                 id = rep(d$ID,3),
+                 nationality = rep(d$nationality,3),
+                 wlr_group = rep(d$wlr_group,3))
+nd$opti[nd$opti==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+# subset_id_T3 <- nd$id[nd$time=="T3" & !is.na(nd$opti)]
+
+ggplot(nd, aes(x=time,y=opti,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="Optimism score")
+```
+
+```{r, echo=FALSE}
+SJ_T3 <- nd$id[!is.na(nd$opti) & nd$time=="T3"]
+SJ_T2 <- nd$id[!is.na(nd$opti) & nd$time=="T2"]
+m.opti <- nparLD(opti~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T3,SJ_T2))),], subject="id",description=F,order.warning=F)
+capture.output( {
+  aov.all.np <- print(m.opti)$ANOVA.test
+  aov.all.np.modi <- print(m.opti)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Optimism: ANOVA-Type Statistc (ATS).")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Optimism: Modified ANOVA-Type Statistic for the between-subjects factors.")
+```
+
+\newpage
+
+### Human Insecurity Scale (HIS)
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=5, fig.align='center', fig.cap = "Insecurity scores across timepoints"}
+nd <- data.frame(score=c(d$HIDS_INSECURITY_1,d$HIDS_INSECURITY_2,d$INSECURITY_3), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d)),rep("T3",nrow(d))),
+                 id = rep(d$ID,3),
+                 nationality = rep(d$nationality,3),
+                 wlr_group = rep(d$wlr_group,3))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+# subset_id_T3 <- nd$id[nd$time=="T3" & !is.na(nd$score)]
+
+ggplot(nd, aes(x=time,y=score,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="Insecurity score")
+```
+
+```{r, echo=FALSE}
+SJ_T3 <- nd$id[!is.na(nd$score) & nd$time=="T3"]
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+m.score <- nparLD(score~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T3,intersect(SJ_T2,SJ_T1)))),], subject="id",description=F,order.warning=F)
+
+capture.output( {
+  aov.all.np <- print(m.score)$ANOVA.test
+  aov.all.np.modi <- print(m.score)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Insecurity: ANOVA-Type Statistc (ATS).")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Insecurity: Modified ANOVA-Type Statistic for the between-subjects factors.")
+```
+
+\newpage
+
+### Human Distress Scale (HDS)
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=5, fig.align='center', fig.cap = "Distress scores across timepoints"}
+nd <- data.frame(score=c(d$HIDS_DISTRESS_1, d$HIDS_DISTRESS_2, d$DISTRESS_3), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d)),rep("T3",nrow(d))),
+                 id = rep(d$ID,3),
+                 nationality = rep(d$nationality,3),
+                 wlr_group = rep(d$wlr_group,3))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+
+ggplot(nd, aes(x=time,y=score,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="Distress score")
+```
+
+```{r, echo=FALSE}
+SJ_T3 <- nd$id[!is.na(nd$score) & nd$time=="T3"]
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+m.score <- nparLD(score~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T3,intersect(SJ_T2,SJ_T1)))),], subject="id",description=F,order.warning=F)
+
+capture.output( {
+  aov.all.np <- print(m.score)$ANOVA.test
+  aov.all.np.modi <- print(m.score)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Distress: ANOVA-Type Statistc (ATS).")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Distress: Modified ANOVA-Type Statistic for the between-subjects factors.")
+```
+
+\newpage
+
+### Arab Youth Mental Health Scale (AYMHS)
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=5, fig.align='center', fig.cap = "Mental health (AYMHS) scores across timepoints"}
+nd <- data.frame(score=c(d$AYMHS_1 , d$AYMHS_2, d$AYMHS_3), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d)),rep("T3",nrow(d))),
+                 id = rep(d$ID,3),
+                 nationality = rep(d$nationality,3),
+                 wlr_group = rep(d$wlr_group,3))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+ggplot(nd, aes(x=time,y=score,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="AYMHS score")
+```
+
+```{r, echo=FALSE}
+SJ_T3 <- nd$id[!is.na(nd$score) & nd$time=="T3"]
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+m.score <- nparLD(score~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T3,intersect(SJ_T2,SJ_T1)))),], subject="id",description=F,order.warning=F)
+
+capture.output( {
+  aov.all.np <- print(m.score)$ANOVA.test
+  aov.all.np.modi <- print(m.score)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Mental health (AYMHS): ANOVA-Type Statistc (ATS).")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Mental health (AYMHS): Modified ANOVA-Type Statistic for the between-subjects factors.")
+```
+
+\newpage
+
+## Longitudinal analysis (2 time points)
+
+The following plots contain data from only participants that were re-tested at T2.
+
+### Optimism
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Optimism scores across 2 timepoints"}
+nd <- data.frame(opti=c(d$OPTIMISM_1,d$OPTIMISM_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$opti[nd$opti==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T1 <- nd$id[!is.na(nd$opti) & nd$time=="T1"]
+SJ_T2 <- nd$id[!is.na(nd$opti) & nd$time=="T2"]
+
+ggplot(nd[which(is.element(nd$id, intersect(SJ_T1,SJ_T2))),], aes(x=time,y=opti,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="Optimism score")
+
+```
+
+```{r, echo=FALSE}
+m.opti <- nparLD(opti~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T1,SJ_T2))),], subject="id",description=F,order.warning=F)
+capture.output( {
+  aov.all.np <- print(m.opti)$ANOVA.test
+  aov.all.np.modi <- print(m.opti)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Optimism: ANOVA-Type Statistc (ATS). 2 time points only.")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Optimism: Modified ANOVA-Type Statistic for the between-subjects factors. 2 time points only.")
+```
+
+\newpage
+
+### Human Insecurity Scale (HIS)
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Insecurity scores across 2 timepoints"}
+nd <- data.frame(score=c(d$HIDS_INSECURITY_1,d$HIDS_INSECURITY_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+ggplot(nd[which(is.element(nd$id, intersect(SJ_T1,SJ_T2))),], aes(x=time,y=score,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="Insecurity score")
+
+```
+
+```{r, echo=FALSE}
+m.score <- nparLD(score~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F)
+
+capture.output( {
+  aov.all.np <- print(m.score)$ANOVA.test
+  aov.all.np.modi <- print(m.score)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Insecurity: ANOVA-Type Statistc (ATS). 2 time points only.")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Insecurity: Modified ANOVA-Type Statistic for the between-subjects factors. 2 time points only.")
+```
+
+\newpage
+
+### Human Distress Scale (HDS)
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Distress scores across 2 timepoints"}
+nd <- data.frame(score=c(d$HIDS_DISTRESS_1, d$HIDS_DISTRESS_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+ggplot(nd[which(is.element(nd$id, intersect(SJ_T1,SJ_T2))),], aes(x=time,y=score,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="Distress score")
+```
+
+```{r, echo=FALSE}
+m.score <- nparLD(score~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F)
+
+capture.output( {
+  aov.all.np <- print(m.score)$ANOVA.test
+  aov.all.np.modi <- print(m.score)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Distress: ANOVA-Type Statistc (ATS). 2 time points only.")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Distress: Modified ANOVA-Type Statistic for the between-subjects factors. 2 time points only.")
+```
+
+\newpage
+
+### Arab Youth Mental Health Scale (AYMHS)
+
+```{r, echo=FALSE, warning=FALSE, fig.height=2.5,fig.width=4, fig.align='center', fig.cap = "Mental health (AYMHS) scores across timepoints"}
+nd <- data.frame(score=c(d$AYMHS_1 , d$AYMHS_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+ggplot(nd[which(is.element(nd$id, intersect(SJ_T1,SJ_T2))),], aes(x=time,y=score,color=wlr_group,fill=wlr_group))+geom_boxplot(notch=F,alpha=0.2,outlier.alpha=1)+facet_grid(.~nationality)+nice_theme+scale_color_manual(values=c("black","blue"),name="")+scale_fill_manual(values=c("black","blue"),name="")+labs(x="Timepoint",y="AYMHS score")
+```
+
+```{r, echo=FALSE}
+m.score <- nparLD(score~time*wlr_group*nationality, data=nd[which(is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F)
+
+capture.output( {
+  aov.all.np <- print(m.score)$ANOVA.test
+  aov.all.np.modi <- print(m.score)$ANOVA.test.mod.Box
+  }, file='NUL')
+kable(aov.all.np , caption = "Mental health (AYMHS): ANOVA-Type Statistc (ATS). 2 time points only.")
+```
+
+```{r, echo=FALSE}
+kable(aov.all.np.modi , caption = "Mental health (AYMHS): Modified ANOVA-Type Statistic for the between-subjects factors. 2 time points only.")
+```
+
+\newpage
+
+### Post-hoc tests
+
+Some of the analyses revealed significant changes in the scores that could be attributed to the WLR reading program. Here I use the same non parametric approach to do post-hoc comparisons. There are three tables, one for optimism, one for distress and one for mental health. Control of family-wise error rate is done by applying the Bonferroni correction: the adjusted p-value is the p-value multiplied by the number of comparisons, 4, correspondign to alpha level of 0.0125 ^[A more restrictive control perhaps would be to consider this a family of 3 times 4 = 12 comparisons, corresponding to an alpha level of 0.00416, in which case the only remaining significant comparison would be Syrian, WLR: T2 vs T1, with a p-value of =0.0155.].
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$OPTIMISM_1,d$OPTIMISM_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+capture.output( {
+
+    PHtest[[1]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[2]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[3]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[4]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+}, file='NUL')
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- t_i$ANOVA.test 
+  d_line$p_adjusted <- d_line$`p-value` * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T2 vs T1", "Syrian, control: T2 vs T1", "Jordanian, WLR: T2 vs T1", "Jordanian, control: T2 vs T1")
+
+
+kable(PH_dat , caption = "Post-hoc comparisons for Optimism scale. The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$HIDS_DISTRESS_1, d$HIDS_DISTRESS_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+capture.output( {
+
+    PHtest[[1]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[2]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[3]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[4]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+}, file='NUL')
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- t_i$ANOVA.test 
+  d_line$p_adjusted <- d_line$`p-value` * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T2 vs T1", "Syrian, control: T2 vs T1", "Jordanian, WLR: T2 vs T1", "Jordanian, control: T2 vs T1")
+
+kable(PH_dat , caption = "Post-hoc comparisons for distress scale (HDS). The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$AYMHS_1 , d$AYMHS_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+capture.output( {
+
+    PHtest[[1]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[2]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[3]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[4]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+}, file='NUL')
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- t_i$ANOVA.test 
+  d_line$p_adjusted <- d_line$`p-value` * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T2 vs T1", "Syrian, control: T2 vs T1", "Jordanian, WLR: T2 vs T1", "Jordanian, control: T2 vs T1")
+
+kable(PH_dat , caption = "Post-hoc comparisons for meantal health scale (AYMHS). The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+\newpage
+
+
+Same tests as in previous page, but using Wilcoxon signed rank test.
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$OPTIMISM_1,d$OPTIMISM_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+PHtest[[1]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[2]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[3]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[4]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- data.frame(statistic = t_i$statistic, p.value = t_i$p.value)
+  d_line$p_adjusted <- d_line$p.value * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T2 vs T1", "Syrian, control: T2 vs T1", "Jordanian, WLR: T2 vs T1", "Jordanian, control: T2 vs T1")
+
+PH_dat$p.adjusted.BH <- p.adjust(PH_dat$p.value, method = "BH")
+
+kable(PH_dat , caption = "Post-hoc comparisons for Optimism scale (Wilcoxon signed rank tests). The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$HIDS_DISTRESS_1, d$HIDS_DISTRESS_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+PHtest[[1]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[2]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[3]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[4]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- data.frame(statistic = t_i$statistic, p.value = t_i$p.value)
+  d_line$p_adjusted <- d_line$p.value * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T2 vs T1", "Syrian, control: T2 vs T1", "Jordanian, WLR: T2 vs T1", "Jordanian, control: T2 vs T1")
+
+PH_dat$p.adjusted.BH <- p.adjust(PH_dat$p.value, method = "BH")
+
+kable(PH_dat , caption = "Post-hoc comparisons for distress scale (HDS), Wilcoxon signed rank tests. The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$AYMHS_1 , d$AYMHS_2), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+PHtest[[1]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[2]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[3]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[4]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- data.frame(statistic = t_i$statistic, p.value = t_i$p.value)
+  d_line$p_adjusted <- d_line$p.value * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T2 vs T1", "Syrian, control: T2 vs T1", "Jordanian, WLR: T2 vs T1", "Jordanian, control: T2 vs T1")
+
+PH_dat$p.adjusted.BH <- p.adjust(PH_dat$p.value, method = "BH")
+
+kable(PH_dat , caption = "Post-hoc comparisons for meantal health scale (AYMHS); Wilcoxon signed rank tests. The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+
+
+\newpage
+
+### Post-hoc tests: T3 vs T1
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$OPTIMISM_1,d$YLOT_3), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+capture.output( {
+
+    PHtest[[1]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[2]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[3]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[4]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+}, file='NUL')
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- t_i$ANOVA.test 
+  d_line$p_adjusted <- d_line$`p-value` * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T3 vs T1", "Syrian, control: T3 vs T1", "Jordanian, WLR: T3 vs T1", "Jordanian, control: T3 vs T1")
+
+kable(PH_dat , caption = "Post-hoc comparisons for Optimism scale. The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$HIDS_DISTRESS_1, d$DISTRESS_3), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+capture.output( {
+
+    PHtest[[1]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[2]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[3]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[4]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+}, file='NUL')
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- t_i$ANOVA.test 
+  d_line$p_adjusted <- d_line$`p-value` * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T3 vs T1", "Syrian, control: T3 vs T1", "Jordanian, WLR: T3 vs T1", "Jordanian, control: T3 vs T1")
+
+kable(PH_dat , caption = "Post-hoc comparisons for distress scale (HDS). The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$AYMHS_1 , d$AYMHS_3), 
+                 time=c(rep("T1",nrow(d)),rep("T2",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T2"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+capture.output( {
+
+    PHtest[[1]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[2]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[3]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+  
+    PHtest[[4]] <- print(nparLD(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),], subject="id",description=F,order.warning=F))
+}, file='NUL')
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- t_i$ANOVA.test 
+  d_line$p_adjusted <- d_line$`p-value` * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T3 vs T1", "Syrian, control: T3 vs T1", "Jordanian, WLR: T3 vs T1", "Jordanian, control: T3 vs T1")
+
+kable(PH_dat , caption = "Post-hoc comparisons for meantal health scale (AYMHS). The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+
+\newpage
+
+
+Same tests as in previous page, but using Wilcoxon signed rank test.
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$OPTIMISM_1,d$YLOT_3),  
+                 time=c(rep("T1",nrow(d)),rep("T3",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T3"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+PHtest[[1]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[2]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[3]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[4]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- data.frame(statistic = t_i$statistic, p.value = t_i$p.value)
+  d_line$p_adjusted <- d_line$p.value * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T3 vs T1", "Syrian, control: T3 vs T1", "Jordanian, WLR: T3 vs T1", "Jordanian, control: T3 vs T1")
+
+PH_dat$p.adjusted.BH <- p.adjust(PH_dat$p.value, method = "BH")
+
+kable(PH_dat , caption = "Post-hoc comparisons for Optimism scale (Wilcoxon signed rank tests). The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$HIDS_DISTRESS_1, d$DISTRESS_3), 
+                 time=c(rep("T1",nrow(d)),rep("T3",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T3"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+PHtest[[1]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[2]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[3]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[4]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- data.frame(statistic = t_i$statistic, p.value = t_i$p.value)
+  d_line$p_adjusted <- d_line$p.value * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T3 vs T1", "Syrian, control: T3 vs T1", "Jordanian, WLR: T3 vs T1", "Jordanian, control: T3 vs T1")
+
+PH_dat$p.adjusted.BH <- p.adjust(PH_dat$p.value, method = "BH")
+
+kable(PH_dat , caption = "Post-hoc comparisons for distress scale (HDS), Wilcoxon signed rank tests. The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+```{r, echo=FALSE}
+# post hoc tests
+nd <- data.frame(score=c(d$AYMHS_1 , d$AYMHS_3), 
+                 time=c(rep("T1",nrow(d)),rep("T3",nrow(d))),
+                 id = rep(d$ID,2),
+                 nationality = rep(d$nationality,2),
+                 wlr_group = rep(d$wlr_group,2))
+nd$score[nd$score==99] <- NA
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+SJ_T2 <- nd$id[!is.na(nd$score) & nd$time=="T3"]
+SJ_T1 <- nd$id[!is.na(nd$score) & nd$time=="T1"]
+
+PHtest <- {}
+PHtest[[1]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[2]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Syrian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[3]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="WLR" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+PHtest[[4]] <- wilcox.test(score~time, data=nd[which(nd$wlr_group=="Control" & nd$nationality=="Jordanian" & is.element(nd$id, intersect(SJ_T2,SJ_T1))),],paired=T,exact=F)
+
+PH_dat <- {}
+for(i in 1:length(PHtest)){
+  t_i <- PHtest[[i]]
+  d_line <- data.frame(statistic = t_i$statistic, p.value = t_i$p.value)
+  d_line$p_adjusted <- d_line$p.value * 4
+  d_line$p_adjusted <- ifelse(d_line$p_adjusted>1,1,d_line$p_adjusted)
+  PH_dat <- rbind(PH_dat, d_line)
+}
+rownames(PH_dat) <- NULL
+PH_dat$Comparison <- c("Syrian, WLR: T3 vs T1", "Syrian, control: T3 vs T1", "Jordanian, WLR: T3 vs T1", "Jordanian, control: T3 vs T1")
+
+PH_dat$p.adjusted.BH <- p.adjust(PH_dat$p.value, method = "BH")
+
+kable(PH_dat , caption = "Post-hoc comparisons for meantal health scale (AYMHS); Wilcoxon signed rank tests. The table also show the adjusted p value (Bonferroni corrected).")
+```
+
+
+
+
+\newpage
+
+## Correlations between questionnaire scores and bias in emotion task
+
+The table reports both Kendall and Spearman rank-correlation coefficients between bias in happy-sad task and questionnaire score at T1, each with both the original p-value and the p-value adjusted after controlling for false discovery rate (_Benjamini–Hochberg procedure_).
+
+```{r, echo=FALSE}
+d_id <-  read.table("./individualT1_HS.txt",sep=";",header=T)
+# all(is.element(d_id$id,d$ID)) #OK
+d$id <- d$ID
+
+d_id <- merge(d_id, d, by="id",all=T)
+
+corr_to_test <- c("OPTIMISM_1","TEC","AYMHS_1","CRIES_ADJUSTED","CRIES_INTRUSION","CRIES_AVOIDANCE","HIDS_INSECURITY_1","HIDS_DISTRESS_1")
+d_corr <- {}
+for(a_i in corr_to_test){
+  corK <- cor.test(d_id$mu, d_id[,a_i], method="kendall", exact=F) 
+  corS <- cor.test(d_id$mu, d_id[,a_i], method="spearman", exact=F) 
+  d_line <- data.frame(quest = a_i, 
+                       kendall = corK$estimate,
+                       kendall_p = corK$p.value,
+                       kendall_p_adj = corK$p.value,
+                       spearman = corS$estimate,
+                       spearman_p = corS$p.value,
+                       spearman_p_adj = corS$p.value)
+  d_corr <- rbind(d_corr, d_line)
+}
+rownames(d_corr) <- NULL
+
+d_corr$kendall_p_adj <- p.adjust(d_corr$kendall_p, method = "BH")
+d_corr$spearman_p_adj <- p.adjust(d_corr$spearman_p, method = "BH")
+
+kable(d_corr , caption = "Non-parametric correlation coefficients between questionnaire scores and bias in HS task.",digits=4)
+
+```
+
+```{r, echo=FALSE}
+d_id <-  read.table("./individualT1_FA.txt",sep=";",header=T)
+d$id <- d$ID
+
+d_id <- merge(d_id, d, by="id",all=T)
+
+corr_to_test <- c("OPTIMISM_1","TEC","AYMHS_1","CRIES_ADJUSTED","CRIES_INTRUSION","CRIES_AVOIDANCE","HIDS_INSECURITY_1","HIDS_DISTRESS_1")
+d_corr <- {}
+for(a_i in corr_to_test){
+  corK <- cor.test(d_id$mu, d_id[,a_i], method="kendall", exact=F) 
+  corS <- cor.test(d_id$mu, d_id[,a_i], method="spearman", exact=F) 
+  d_line <- data.frame(quest = a_i, 
+                       kendall = corK$estimate,
+                       kendall_p = corK$p.value,
+                       kendall_p_adj = corK$p.value,
+                       spearman = corS$estimate,
+                       spearman_p = corS$p.value,
+                       spearman_p_adj = corS$p.value)
+  d_corr <- rbind(d_corr, d_line)
+}
+rownames(d_corr) <- NULL
+
+d_corr$kendall_p_adj <- p.adjust(d_corr$kendall_p, method = "BH")
+d_corr$spearman_p_adj <- p.adjust(d_corr$spearman_p, method = "BH")
+
+kable(d_corr , caption = "Non-parametric correlation coefficients between questionnaire scores and bias in FA task.",digits=4)
+
+```
+
+
+\newpage
+
+# References
