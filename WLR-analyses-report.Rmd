@@ -91,6 +91,7 @@ To analyse the data, we used a multilevel Bayesian generalized-linear model (GLM
 \textbf{R} \sim & \text{LKJcorr} \left( 2 \right)
 \end{align*}
 
+
 where 'img' indicate the level of morphing (centered and rescaled to have standard deviation of 1); 'rfg', 'group' are dummy variables that indicate whether the subject was a refugee (Syrian or Jordanian) or a member of the experimental group (WLR), respectively; and 'T1' and 'T2' are also dummy variables that indicate whether the measurements was taken at T2 or T3 (the first timepoint, T1, is the baseline). 'gender' is the gender of the actor whose face was morphed to generate the stimuli, coded using deviation (or sum) contrasts ($\text{gender}=1$ for female faces, and $\text{gender}=-1$ for male faces). $\lambda$ is a lapse rate parameter, which is assumed to be constant for all subjects (since it was the experimenters, not the children, who pushed buttons for all group and at all time points). Note that the model allow for possible differences between groups and nationality (or refugee status), and also for differences in changes across timepoints.
 
 Finally, note also that although the model is formulated as generalized linear multilevel model (GLMM), the coefficients can be directly mapped to those of the psychometric function. To see this, consider the following simplified example:
@@ -800,6 +801,43 @@ kable(T1_dat, caption = "Comparison of questionnaire responses at T1 (Syrian vs 
 Longitudinal tests for changes in the questionnaire scores at the different time points were done using the non-parametric marginal model [@Brunner2001,@Brunner1999], a generalization of classical non-parametric tests to repeated-measures, factorial designs. For each test the statistical significance is assessed using the ANOVA-type statistic (ATS). The ATS is typically preferred to more classical $\chi^2$ commonly used by rank-score tests as it requires less assumptions on the covariance matrix and it has superior small sample performances [@Brunner2001]. Moreover, for the main effects and interactions involving only the between subjects effects, I report the modified ANOVA-type statistic with Box approximation, which is preferred to ATS [@Brunner2001].
 
 Notice that the longitudinal tests are restricted to the subset of participants for which a measure is available at all timepoints.
+
+\newpage
+
+## Group comparisn of TEC at T1
+
+```{R, echo=F}
+
+nd <- data.frame(TEC=c(d$TEC), 
+                 id = rep(d$ID,1),
+                 nationality = rep(d$nationality,1),
+                 wlr_group = rep(d$wlr_group,1))
+nd$wlr_group <- ifelse(nd$wlr_group=="C","Control","WLR")
+nd$wlr_group <- factor(nd$wlr_group)
+
+#any(is.na(nd$nationality))
+#any(is.na(nd$wlr_group))
+
+#with(nd, tapply(TEC, list(nationality, wlr_group), mean))
+#with(nd, tapply(TEC, list(nationality, wlr_group), sd))
+
+# full model
+library(rankFD)
+m.TEC <- rankFD(TEC~wlr_group*nationality, data=nd)
+#print(m.TEC)
+
+kable(with(nd, tapply(TEC, list(nationality, wlr_group), mean)), caption = "Mean TEC scores at T1 by group",digits=2)
+```
+
+```{R, echo=F}
+kable(with(nd, tapply(TEC, list(nationality, wlr_group), sd)), caption = "Std TEC scores at T1 by group",digits=2)
+```
+
+```{R, echo=F}
+
+kable(m.TEC$ANOVA.Type.Statistic , caption = "Insecurity: ANOVA-Type Statistc. TEC at T1 time point",digits=6)
+```
+
 
 \newpage
 

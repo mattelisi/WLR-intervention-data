@@ -216,25 +216,28 @@ intervention at T3 in the Syrian group.
 
 However, it is possible to adjust for this confound, by including in the
 analysees some additiona data that we collected. Specifically, we have a
-fairly large sample of Syrian kids that have been tested with both set
-of faces. The approach I have adopted to adjust the analysis is the
+fairly large sample of Syrian children that have been tested with both
+set of faces. The approach I have adopted to adjust the analysis is the
 following:
 
-\begin{itemize}
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
 \item
   Estimate the difference in the parameters of the psychometric function
   using these additional dataset, which consist of the children tested
-  at T1, and the new children tested at T3 (see Table 4). The output is
-  a posterior distribution that gives the probability of over possible
-  changes in the parameters due to the different actor identity.
+  at T1, and the new children tested at T3 (see Table 4).
+\item
+  Such analysis allow estimating a posterior distribution that gives the
+  probability of over possible changes in the parameters due to the
+  change in the identity of the stimulus.
 \item
   Next, the posterior distribution is used as a prior in the full model
   (using a Gaussian approximation, see below) to constrain additional
   parameters, added to account for the effect of actor identity.
-\end{itemize}
+\end{enumerate}
 
 Overall, the outcome will be identical to the previous model, except for
-the estiamted parameters of the Syrian control at T3, which will be
+the estimated parameters of the Syrian control at T3, which will be
 adjusted to account for the effect of actor. Importantly, using this
 approach uncertainty is propagated exactly, such that the confidence
 interval around the estimated parameters for the Syrian T3 group will be
@@ -527,6 +530,60 @@ participants for which a measure is available at all timepoints.
 
 \newpage
 
+\hypertarget{group-comparisn-of-tec-at-t1}{%
+\subsection{Group comparisn of TEC at
+T1}\label{group-comparisn-of-tec-at-t1}}
+
+\begin{longtable}[]{@{}lrr@{}}
+\caption{Mean TEC scores at T1 by group}\tabularnewline
+\toprule
+& Control & WLR\tabularnewline
+\midrule
+\endfirsthead
+\toprule
+& Control & WLR\tabularnewline
+\midrule
+\endhead
+Jordanian & 0.15 & 0.20\tabularnewline
+Syrian & 9.86 & 5.67\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{longtable}[]{@{}lrr@{}}
+\caption{Std TEC scores at T1 by group}\tabularnewline
+\toprule
+& Control & WLR\tabularnewline
+\midrule
+\endfirsthead
+\toprule
+& Control & WLR\tabularnewline
+\midrule
+\endhead
+Jordanian & 0.37 & 0.50\tabularnewline
+Syrian & 2.01 & 3.61\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{longtable}[]{@{}lrrrr@{}}
+\caption{Insecurity: ANOVA-Type Statistc. TEC at T1 time
+point}\tabularnewline
+\toprule
+& Statistic & df1 & df2 & p-Value\tabularnewline
+\midrule
+\endfirsthead
+\toprule
+& Statistic & df1 & df2 & p-Value\tabularnewline
+\midrule
+\endhead
+wlr\_group & 16.51701 & 1 & 76.03479 & 0.000116\tabularnewline
+nationality & 330.04831 & 1 & 76.03479 & 0.000000\tabularnewline
+wlr\_group:nationality & 17.93002 & 1 & 76.03479 &
+0.000064\tabularnewline
+\bottomrule
+\end{longtable}
+
+\newpage
+
 \hypertarget{longitudinal-analysis-3-time-points}{%
 \subsection{Longitudinal analysis (3 time
 points)}\label{longitudinal-analysis-3-time-points}}
@@ -539,11 +596,11 @@ whether they showed up at T2 or T3).
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-16-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-19-1} 
 
 }
 
-\caption{Optimism scores across timepoints}\label{fig:unnamed-chunk-16}
+\caption{Optimism scores across timepoints}\label{fig:unnamed-chunk-19}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -593,11 +650,11 @@ wlr\_group:nationality & 1.070948 & 1 & 25.94952 &
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-19-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-22-1} 
 
 }
 
-\caption{Insecurity scores across timepoints}\label{fig:unnamed-chunk-19}
+\caption{Insecurity scores across timepoints}\label{fig:unnamed-chunk-22}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -647,11 +704,11 @@ wlr\_group:nationality & 0.0001575 & 1 & 11.15105 &
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-22-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-25-1} 
 
 }
 
-\caption{Distress scores across timepoints}\label{fig:unnamed-chunk-22}
+\caption{Distress scores across timepoints}\label{fig:unnamed-chunk-25}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -701,11 +758,11 @@ wlr\_group:nationality & 3.9598536 & 1 & 29.29467 &
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-25-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-28-1} 
 
 }
 
-\caption{Mental health (AYMHS) scores across timepoints}\label{fig:unnamed-chunk-25}
+\caption{Mental health (AYMHS) scores across timepoints}\label{fig:unnamed-chunk-28}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -762,11 +819,11 @@ re-tested at T2.
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-28-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-31-1} 
 
 }
 
-\caption{Optimism scores across 2 timepoints}\label{fig:unnamed-chunk-28}
+\caption{Optimism scores across 2 timepoints}\label{fig:unnamed-chunk-31}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -816,11 +873,11 @@ wlr\_group:nationality & 0.2938879 & 1 & 42.05632 &
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-31-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-34-1} 
 
 }
 
-\caption{Insecurity scores across 2 timepoints}\label{fig:unnamed-chunk-31}
+\caption{Insecurity scores across 2 timepoints}\label{fig:unnamed-chunk-34}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -870,11 +927,11 @@ wlr\_group:nationality & 0.0012357 & 1 & 45.37821 &
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-34-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-37-1} 
 
 }
 
-\caption{Distress scores across 2 timepoints}\label{fig:unnamed-chunk-34}
+\caption{Distress scores across 2 timepoints}\label{fig:unnamed-chunk-37}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -924,11 +981,11 @@ wlr\_group:nationality & 0.0003559 & 1 & 43.12443 &
 
 \begin{figure}[H]
 
-{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-37-1} 
+{\centering \includegraphics{WLR-analyses-report_files/figure-latex/unnamed-chunk-40-1} 
 
 }
 
-\caption{Mental health (AYMHS) scores across timepoints}\label{fig:unnamed-chunk-37}
+\caption{Mental health (AYMHS) scores across timepoints}\label{fig:unnamed-chunk-40}
 \end{figure}
 
 \begin{longtable}[]{@{}lrrr@{}}
@@ -1309,22 +1366,22 @@ quest & kendall & kendall\_p & kendall\_p\_adj & spearman & spearman\_p
 & spearman\_p\_adj\tabularnewline
 \midrule
 \endhead
-OPTIMISM\_1 & 0.2076 & 0.0075 & 0.0597 & 0.2853 & 0.0056 &
-0.0446\tabularnewline
-TEC & -0.0971 & 0.2016 & 0.4033 & -0.1248 & 0.2333 &
-0.3921\tabularnewline
-AYMHS\_1 & 0.0468 & 0.5245 & 0.5245 & 0.0710 & 0.5061 &
-0.5061\tabularnewline
-CRIES\_ADJUSTED & -0.1617 & 0.0461 & 0.1228 & -0.2115 & 0.0441 &
-0.1177\tabularnewline
-CRIES\_INTRUSION & -0.0739 & 0.3471 & 0.4628 & -0.0985 & 0.3558 &
-0.4745\tabularnewline
-CRIES\_AVOIDANCE & -0.0894 & 0.2544 & 0.4071 & -0.1231 & 0.2451 &
-0.3921\tabularnewline
-HIDS\_INSECURITY\_1 & -0.0566 & 0.4446 & 0.5081 & -0.0819 & 0.4454 &
-0.5061\tabularnewline
-HIDS\_DISTRESS\_1 & 0.1779 & 0.0161 & 0.0643 & 0.2423 & 0.0214 &
-0.0855\tabularnewline
+OPTIMISM\_1 & 0.2032 & 0.0088 & 0.0694 & 0.2789 & 0.0068 &
+0.0544\tabularnewline
+TEC & -0.0971 & 0.2016 & 0.4033 & -0.1214 & 0.2463 &
+0.4126\tabularnewline
+AYMHS\_1 & 0.0499 & 0.4975 & 0.4975 & 0.0724 & 0.4976 &
+0.4976\tabularnewline
+CRIES\_ADJUSTED & -0.1617 & 0.0461 & 0.1228 & -0.2093 & 0.0465 &
+0.1240\tabularnewline
+CRIES\_INTRUSION & -0.0745 & 0.3432 & 0.4576 & -0.0994 & 0.3513 &
+0.4634\tabularnewline
+CRIES\_AVOIDANCE & -0.0858 & 0.2737 & 0.4379 & -0.1198 & 0.2579 &
+0.4126\tabularnewline
+HIDS\_INSECURITY\_1 & -0.0597 & 0.4196 & 0.4795 & -0.0893 & 0.4054 &
+0.4634\tabularnewline
+HIDS\_DISTRESS\_1 & 0.1758 & 0.0173 & 0.0694 & 0.2401 & 0.0226 &
+0.0905\tabularnewline
 \bottomrule
 \end{longtable}
 
@@ -1341,22 +1398,22 @@ quest & kendall & kendall\_p & kendall\_p\_adj & spearman & spearman\_p
 & spearman\_p\_adj\tabularnewline
 \midrule
 \endhead
-OPTIMISM\_1 & -0.0783 & 0.3129 & 0.8345 & -0.1018 & 0.3313 &
-0.8754\tabularnewline
-TEC & -0.1108 & 0.1449 & 0.5796 & -0.1579 & 0.1306 &
-0.5401\tabularnewline
-AYMHS\_1 & -0.0129 & 0.8612 & 0.8834 & -0.0222 & 0.8352 &
-0.8754\tabularnewline
-CRIES\_ADJUSTED & -0.0388 & 0.6325 & 0.8834 & -0.0496 & 0.6403 &
-0.8754\tabularnewline
-CRIES\_INTRUSION & 0.0197 & 0.8024 & 0.8834 & 0.0318 & 0.7659 &
-0.8754\tabularnewline
-CRIES\_AVOIDANCE & 0.0115 & 0.8834 & 0.8834 & 0.0167 & 0.8754 &
-0.8754\tabularnewline
-HIDS\_INSECURITY\_1 & -0.1113 & 0.1326 & 0.5796 & -0.1597 & 0.1350 &
-0.5401\tabularnewline
-HIDS\_DISTRESS\_1 & 0.0124 & 0.8666 & 0.8834 & 0.0216 & 0.8397 &
-0.8754\tabularnewline
+OPTIMISM\_1 & -0.0788 & 0.3096 & 0.8255 & -0.1022 & 0.3296 &
+0.8788\tabularnewline
+TEC & -0.1108 & 0.1449 & 0.5796 & -0.1572 & 0.1325 &
+0.5299\tabularnewline
+AYMHS\_1 & -0.0139 & 0.8502 & 0.9012 & -0.0218 & 0.8384 &
+0.8951\tabularnewline
+CRIES\_ADJUSTED & -0.0402 & 0.6203 & 0.9012 & -0.0522 & 0.6228 &
+0.8951\tabularnewline
+CRIES\_INTRUSION & 0.0167 & 0.8319 & 0.9012 & 0.0282 & 0.7922 &
+0.8951\tabularnewline
+CRIES\_AVOIDANCE & 0.0097 & 0.9012 & 0.9012 & 0.0140 & 0.8951 &
+0.8951\tabularnewline
+HIDS\_INSECURITY\_1 & -0.1134 & 0.1254 & 0.5796 & -0.1643 & 0.1240 &
+0.5299\tabularnewline
+HIDS\_DISTRESS\_1 & 0.0176 & 0.8119 & 0.9012 & 0.0290 & 0.7864 &
+0.8951\tabularnewline
 \bottomrule
 \end{longtable}
 
