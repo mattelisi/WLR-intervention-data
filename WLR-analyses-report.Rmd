@@ -804,7 +804,7 @@ Notice that the longitudinal tests are restricted to the subset of participants 
 
 \newpage
 
-## Group comparisn of TEC at T1
+## Group comparison of TEC at T1
 
 ```{R, echo=F}
 

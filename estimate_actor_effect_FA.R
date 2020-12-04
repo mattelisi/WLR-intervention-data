@@ -6,7 +6,7 @@
 rm(list=ls())
 setwd('~/git_local/WLR-intervention-data/')
 dMerged <- read.table("./data_bias/bias_T123_merged.txt",sep=";",header=T)
-dMerged <- dMerged[dMerged$id!="JM9",]
+dMerged <- dMerged[-which(dMerged$id=="JM9" & dMerged$time!="T1"),]
 d <- dMerged[dMerged$task=="FA",]
 
 # double-check the pairing of children to actor identities
@@ -64,8 +64,8 @@ options(mc.cores = parallel::detectCores()) # indicate stan to use multiple core
 rstan_options(auto_write = TRUE)
 
 # run the model
-#m0 <- stan(file = "./data_bias/additional_data/bGLMM_bias_check.stan", data = d_stan, iter = 3000, chains = 4)
-#saveRDS(m0, file="./data_bias/additional_data/bGLMM_bias_check_results_FA.RDS")
+m0 <- stan(file = "./data_bias/additional_data/bGLMM_bias_check.stan", data = d_stan, iter = 3000, chains = 4)
+saveRDS(m0, file="./data_bias/additional_data/bGLMM_bias_check_results_FA.RDS")
 
 m0 <- readRDS("./data_bias/additional_data/bGLMM_bias_check_results_FA.RDS")
 

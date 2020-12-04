@@ -5,7 +5,7 @@
 rm(list=ls())
 setwd('~/git_local/WLR-intervention-data/')
 dMerged <- read.table("./data_bias/bias_T123_merged.txt",sep=";",header=T)
-dMerged <- dMerged[dMerged$id!="JM9",]
+dMerged <- dMerged[-which(dMerged$id=="JM9" & dMerged$time!="T1"),]
 d <- dMerged[dMerged$task=="HS",]
 
 dag <- aggregate(refugee~id+group+ethni+time+face_gender+actor, d,mean)
@@ -65,8 +65,8 @@ str(d_stan)
 library(rstan)
 options(mc.cores = parallel::detectCores()) # indicate stan to use multiple cores if available
 rstan_options(auto_write = TRUE)
-#m0 <- stan(file = "./additional_data/bGLMM_bias_check_rfgOnly.stan", data = d_stan, iter = 3000, chains = 4)
-#saveRDS(m0, file="./additional_data/bGLMM_bias_check_results_rfgOnly.RDS")
+m0 <- stan(file = "./data_bias/additional_data/bGLMM_bias_check_rfgOnly.stan", data = d_stan, iter = 3000, chains = 4)
+saveRDS(m0, file="./data_bias/additional_data/bGLMM_bias_check_results_rfgOnly.RDS")
 
 m0 <- readRDS("./data_bias/additional_data/bGLMM_bias_check_results_rfgOnly.RDS")
 

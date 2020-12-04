@@ -5,9 +5,12 @@ setwd('~/git_local/WLR-intervention-data/')
 
 dMerged <- read.table("./data_bias/bias_T123_merged.txt",sep=";",header=T)
 
-# JM9 came to testing but we then discovered that had stopped attending the program
-dMerged <- dMerged[dMerged$id!="JM9",]
+# JM9 came to testing at T3 but we then discovered that had stopped attending the program
+# I use their data only for baseline at T1
+#dMerged <- dMerged[dMerged$id!="JM9",]
+dMerged <- dMerged[-which(dMerged$id=="JM9" & dMerged$time!="T1"),]
 d <- dMerged[dMerged$task=="HS",]
+
 
 
 # ------------------------------------------------------------------------------------------------------------- #
